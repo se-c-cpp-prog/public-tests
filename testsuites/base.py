@@ -188,14 +188,18 @@ class BaseTest:
 		if returncode != 0:
 			return err_should_pass(returncode)
 
-		# CASE: Error output should be empty.
+		# If there is no point to check output, then skip and return OK.
 		empty_stderr = stderr == "" or stderr is None
+		if not check_output:
+			if not empty_stderr:
+				print('       STDERR -->')
+				print(stderr)
+				print('   <-- STDERR')
+			return err_ok()
+
+		# CASE: Error output should be empty.
 		if not empty_stderr:
 			return err_stderr_not_empty(stderr)
-
-		# If there is no point to check output, then skip and return OK.
-		if not check_output:
-			return err_ok()
 
 		# Read actual content.
 		actual_content: List[str] = []
