@@ -148,9 +148,9 @@ class BaseTest:
 
 	# Returns None, if there was a timeout expired exception.
 	# Otherwise, returns tuple of STDOUT, STDERR and RETURNCODE of program.
-	def __runner(self, program: str, input: Union[str, int, float, List[str], List[int], List[float]], timeout: int, timeout_factor: int) -> Optional[Tuple[str, str, int]]:
+	def __runner(self, program: str, input: Union[str, int, float, List[str], List[int], List[float]], timeout: int, timeout_factor: float) -> Optional[Tuple[str, str, int]]:
 		full_program = [program]
-		full_timeout = timeout * timeout_factor
+		full_timeout = int(timeout * timeout_factor)
 
 		# If it's not STDIN communication, turn input to list as cmd's arguments.
 		if not self.__is_stdin_input:
@@ -254,7 +254,7 @@ class BaseTest:
 
 		return err_ok()
 
-	def run(self, program: str, check_output: bool, timeout_factor: int) -> BaseResult:
+	def run(self, program: str, check_output: bool, timeout_factor: float) -> BaseResult:
 		results = self.__runner(program, self.__input, self.__timeout, timeout_factor)
 
 		# If it's None, then there was a Timeout error.
@@ -287,7 +287,7 @@ class BaseTester:
 		test = BaseTest(name, input, None, None, timeout, exitcode, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator)
 		self.__tests.append(test)
 
-	def run(self, program: str, check_output: bool, timeout_factor: int) -> BaseSuite:
+	def run(self, program: str, check_output: bool, timeout_factor: float) -> BaseSuite:
 		path_program = os.path.abspath(program)
 
 		# If there is no file, then no test.

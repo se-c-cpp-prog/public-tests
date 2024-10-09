@@ -28,7 +28,7 @@ if __name__ == '__main__':
 	parser.add_argument('--program', help = 'path to the program under test', type = str, required = True)
 	parser.add_argument('--suite', help = 'select testing task', type = str, choices = SELECTOR, required = True)
 	parser.add_argument('--check-output', help = 'is it necessary to check the program\'s output', type = str, default = 'TRUE')
-	parser.add_argument('--timeout-factor', help = 'maximum execution time multiplier', type = int, default = 1)
+	parser.add_argument('--timeout-factor', help = 'maximum execution time multiplier', type = float, default = 1.0)
 	parser.add_argument('--json-output-name', help = 'JSON results: json output filename', type = str, default = None)
 	parser.add_argument('--json-target-system', help = 'JSON results: json run target system', type = str, default = None)
 	parser.add_argument('--json-use-compiler', help = 'JSON results: json used compiler for building program', type = str, default = None)
@@ -42,7 +42,7 @@ if __name__ == '__main__':
 
 	# Test setup.
 	setup_check_output: bool = t_or_f(args.check_output)
-	setup_timeout_factor: int = args.timeout_factor
+	setup_timeout_factor: float = args.timeout_factor
 
 	# JSON results.
 	json_output_name: str = args.json_output_name
