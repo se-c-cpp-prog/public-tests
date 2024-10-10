@@ -185,12 +185,18 @@ class BaseTest:
 
 	def __should_pass(self, stdout: str, stderr: str, returncode: int, check_output: bool) -> BaseResult:
 		# CASE: Program doesn't returns 0.
+		empty_stderr = stderr == "" or stderr is None
 		if returncode != 0:
+			# For sanitizers.
+			if not empty_stderr:
+				print('       STDERR -->')
+				print(stderr)
+				print('   <-- STDERR')
 			return err_should_pass(returncode)
 
 		# If there is no point to check output, then skip and return OK.
-		empty_stderr = stderr == "" or stderr is None
 		if not check_output:
+			# For sanitizers.
 			if not empty_stderr:
 				print('       STDERR -->')
 				print(stderr)
@@ -254,6 +260,11 @@ class BaseTest:
 
 		# CASE: Exitcode must be correct.
 		if returncode != self.__exitcode:
+			# For sanitizers.
+			if not empty_stderr:
+				print('       STDERR -->')
+				print(stderr)
+				print('   <-- STDERR')
 			return err_exitcode(returncode, self.__exitcode)
 
 		return err_ok()
