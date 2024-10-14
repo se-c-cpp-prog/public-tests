@@ -50,7 +50,7 @@ def __generate_tests() -> Iterable[Tuple[str, List[str], str, str]]:
 	return generated
 
 def get_instance() -> Tuple[base.BaseTester, Optional[Dict[str, float]]]:
-	ALL_COEFFICIENTS = ['simple']
+	ALL_COEFFICIENTS = ['a + b']
 
 	hello_tester = base.BaseTester(is_stdin_input = False, is_raw_input = True, is_raw_output = False)
 
@@ -59,6 +59,6 @@ def get_instance() -> Tuple[base.BaseTester, Optional[Dict[str, float]]]:
 
 	for test_data in tests:
 		test_name, test_input, test_output_stream, test_expected = test_data
-		hello_tester.add_success(test_name, test_input, test_expected, test_output_stream, categories = ['simple', 'a + b'])
+		hello_tester.add_success(test_name, test_input, test_expected, test_output_stream, categories = ['a + b'])
 
 	return hello_tester, coefficients
