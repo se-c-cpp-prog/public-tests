@@ -1,5 +1,6 @@
 import os
 import subprocess
+import time
 
 from enum import Enum
 from typing import List, Union, Tuple, Optional, Dict, Iterable, Set
@@ -20,9 +21,21 @@ class Errno(Enum):
 	ERROR_UNKNOWN = 'unknown'
 
 class BaseResult:
-	def __init__(self, errno: Errno, what: Optional[str] = None):
+	def __init__(self, errno: Errno, exitcode: int = 0, timer: int = 1, output: str = '<no output>', stderr: str = '<no error output>', what: Optional[str] = None):
 		self.__errno = errno
 		self.__what = what
+
+		self.output = output
+		self.stderr = stderr
+
+		self.exitcode = exitcode
+		self.timer = timer
+
+	def get_verdict(self) -> str:
+		return self.__errno.value
+
+	def get_additional_info(self) -> Optional[str]:
+		return self.__what
 
 	def __str__(self) -> str:
 		if self.__what is None:
@@ -32,65 +45,6 @@ class BaseResult:
 
 	def ok(self) -> bool:
 		return self.__errno == Errno.ERROR_SUCCESS
-
-class BaseSuite:
-	def __init__(self):
-		self.__results: List[Tuple[str, Set[str], BaseResult]] = []
-
-	def add_result(self, name: str, categories: Iterable[str], result: BaseResult):
-		if isinstance(categories, set):
-			self.__results.append((name, categories, result))
-		else:
-			self.__results.append((name, set(categories), result))
-
-	def ok(self) -> bool:
-		return all(result.ok() for _, _, result in self.__results)
-
-	def __get_number_passed(self, category: str) -> int:
-		passed = 0
-		for results in self.__results:
-			_, categories, result = results
-			if result.ok() and category in categories:
-				passed += 1
-		return passed
-
-	def __get_number_total(self, category: str) -> int:
-		total = 0
-		for results in self.__results:
-			_, categories, _ = results
-			if category in categories:
-				total += 1
-		return total
-
-	def get_all_categories(self) -> Set[str]:
-		all_categories: Set[str] = set()
-		for results in self.__results:
-			_, categories, _ = results
-			all_categories.update(categories)
-		return all_categories
-
-	def get_raw_results(self) -> Dict[str, float]:
-		raw: Dict[str, float] = {}
-		categories = self.get_all_categories()
-
-		for category in categories:
-			passed = self.__get_number_passed(category)
-			total = self.__get_number_total(category)
-			raw[category] = (passed / total)
-
-		return raw
-
-	def json(self) -> Dict[str, dict]:
-		json_results: Dict[str, dict] = {}
-		for i, results in enumerate(self.__results):
-			name, categories, result = results
-			json_object_name = "test_%d" % (i)
-			json_single_result = {}
-			json_single_result['name'] = name
-			json_single_result['categories'] = list(categories)
-			json_single_result['passed'] = result.ok()
-			json_results[json_object_name] = json_single_result
-		return json_results
 
 def escape_envname(name: str) -> str:
 	s = ''
@@ -194,6 +148,9 @@ def err_file_recreated_on_error(file: str) -> BaseResult:
 def err_unknown(what: str) -> BaseResult:
 	return BaseResult(Errno.ERROR_UNKNOWN, escape(what))
 
+def get_time() -> int:
+	return time.time_ns() // 1000000
+
 class BaseTest:
 	def __init__(self, name: str, categories: Iterable[str], input: Union[str, int, float, List[str], List[int], List[float]], expected: Optional[Union[str, int, float, List[str], List[int], List[float]]], output_stream: Optional[str], timeout: int, exitcode: int, is_stdin_input: bool, is_raw_input: bool, is_raw_output: bool, input_separator: str):
 		self.name = name
@@ -214,7 +171,7 @@ class BaseTest:
 
 	# Returns None, if there was a timeout expired exception.
 	# Otherwise, returns tuple of STDOUT, STDERR and RETURNCODE of program.
-	def __runner(self, program: str, input: Union[str, int, float, List[str], List[int], List[float]], timeout: int, timeout_factor: float) -> Optional[Tuple[str, str, int]]:
+	def __runner(self, program: str, input: Union[str, int, float, List[str], List[int], List[float]], timeout: int, timeout_factor: float) -> Tuple[int, Optional[Tuple[str, str, int]]]:
 		full_program = [program]
 		full_timeout = int(timeout * timeout_factor)
 
@@ -226,10 +183,12 @@ class BaseTest:
 		# Otherwise, run once.
 		if self.__is_stdin_input:
 			proc = subprocess.Popen(full_program, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, universal_newlines = True)
+			start = get_time()
 			try:
 				if self.__is_raw_input:
 					stdout, stderr = proc.communicate(to_str(input, self.__input_separator), timeout = full_timeout)
-					return (stdout, stderr, proc.returncode)
+					end = get_time()
+					return (end - start, (stdout, stderr, proc.returncode))
 				else:
 					file_content = ""
 					if isinstance(input, str):
@@ -238,16 +197,34 @@ class BaseTest:
 					else:
 						raise ValueError('[FATAL ERROR] When it\'s stdin communication and not as raw string producer, then it should be path/to/file with wanted contents.')
 					stdout, stderr = proc.communicate(file_content, timeout = full_timeout)
-					return (stdout, stderr, proc.returncode)
+					end = get_time()
+					return (end - start, (stdout, stderr, proc.returncode))
 			except subprocess.TimeoutExpired:
+				end = get_time()
 				proc.kill()
-				return None
+				return (end - start, None)
 		else:
+			start = get_time()
 			try:
 				results = subprocess.run(full_program, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, timeout = full_timeout, universal_newlines = True)
-				return (results.stdout, results.stderr, results.returncode)
+				end = get_time()
+				return (end - start, (results.stdout, results.stderr, results.returncode))
 			except subprocess.TimeoutExpired:
-				return None
+				end = get_time()
+				return (end - start, None)
+
+	def __collect_to_result(self, stdout: str, stderr: str, returncode: int, timer: int, base_result: BaseResult) -> BaseResult:
+		base_result.output = stdout
+		if self.__output_stream is not None:
+			if not os.path.exists(self.__output_stream):
+				base_result.output = None
+			else:
+				with open(self.__output_stream, 'r') as file:
+					base_result.output = file.read()
+		base_result.stderr = stderr
+		base_result.timer = timer
+		base_result.exitcode = returncode
+		return base_result
 
 	def __should_pass(self, stdout: str, stderr: str, returncode: int, check_output: bool) -> BaseResult:
 		# CASE: Program doesn't returns 0.
@@ -336,17 +313,106 @@ class BaseTest:
 		return err_ok()
 
 	def run(self, program: str, check_output: bool, timeout_factor: float) -> BaseResult:
-		results = self.__runner(program, self.__input, self.__timeout, timeout_factor)
+		timer, results = self.__runner(program, self.__input, self.__timeout, timeout_factor)
 
 		# If it's None, then there was a Timeout error.
 		if results is None:
-			return err_timeout()
+			timeout_result = err_timeout()
+			timeout_result.timer = timer
+			timeout_result.exitcode = -1
+			return timeout_result
 
 		stdout, stderr, returncode = results
 
 		if self.__passes:
-			return self.__should_pass(stdout, stderr, returncode, check_output)
-		return self.__should_fail(stdout, stderr, returncode)
+			should_pass_result = self.__should_pass(stdout, stderr, returncode, check_output)
+			return self.__collect_to_result(stdout, stderr, returncode, timer, should_pass_result)
+
+		should_fail_result = self.__should_fail(stdout, stderr, returncode)
+		return self.__collect_to_result(stdout, stderr, returncode, timer, should_fail_result)
+
+	def get_input(self) -> str:
+		input_content = to_str(self.__input, ' ')
+		if not self.__is_raw_input:
+			with open(str(self.__input), 'r') as stream:
+				input_content = stream.read()
+		return input_content
+
+	def get_reference(self) -> str:
+		if self.__expected is None:
+			return None
+		expected_content = to_str(self.__expected, ' ')
+		if not self.__is_raw_output:
+			with open(str(self.__expected), 'r') as file:
+				expected_content = file.read()
+		return expected_content
+
+class BaseSuite:
+	def __init__(self):
+		self.__results: List[Tuple[BaseTest, BaseResult]] = []
+
+	def add_result(self, test: BaseTest, result: BaseResult):
+		self.__results.append((test, result))
+
+	def ok(self) -> bool:
+		return all(result.ok() for _, result in self.__results)
+
+	def __get_number_passed(self, category: str) -> int:
+		passed = 0
+		for results in self.__results:
+			test, result = results
+			if result.ok() and category in test.categories:
+				passed += 1
+		return passed
+
+	def __get_number_total(self, category: str) -> int:
+		total = 0
+		for results in self.__results:
+			test, _ = results
+			if category in test.categories:
+				total += 1
+		return total
+
+	def get_all_categories(self) -> Set[str]:
+		all_categories: Set[str] = set()
+		for results in self.__results:
+			test, _ = results
+			all_categories.update(test.categories)
+		return all_categories
+
+	def get_raw_results(self) -> Dict[str, float]:
+		raw: Dict[str, float] = {}
+		categories = self.get_all_categories()
+
+		for category in categories:
+			passed = self.__get_number_passed(category)
+			total = self.__get_number_total(category)
+			raw[category] = (passed / total)
+
+		return raw
+
+	def json(self) -> Dict[str, dict]:
+		json_results: Dict[str, dict] = {}
+		for i, results in enumerate(self.__results):
+			test, result = results
+			json_object_name = "test_%d" % (i)
+			json_single_result = {}
+			json_single_result['categories'] = list(test.categories)
+			json_single_result['passed'] = result.ok()
+			json_single_result['verdict'] = result.get_verdict()
+			additional_info = result.get_additional_info()
+			if additional_info is not None:
+				json_single_result['verdict_additional_info'] = additional_info
+			json_single_result['name'] = test.name
+			json_single_result['input'] = test.get_input()
+			json_single_result['output'] = '<no output>' if result.output is None or result.output == '' else result.output
+			reference_str = test.get_reference()
+			json_single_result['reference'] = '<no reference>' if reference_str is None or reference_str == '' else reference_str
+			json_single_result['stderr'] = '<no error output>' if result.stderr is None or result.stderr == '' else result.stderr
+			json_single_result['exitcode'] = result.exitcode
+			json_single_result['time'] = result.timer
+			json_results[json_object_name] = json_single_result
+		return json_results
 
 class BaseTester:
 	def __init__(self, is_stdin_input: bool = True, is_raw_input: bool = True, is_raw_output: bool = True, input_separator: str = ' '):
@@ -369,17 +435,15 @@ class BaseTester:
 		self.__tests.append(test)
 
 	def run(self, program: str, check_output: bool, timeout_factor: float) -> BaseSuite:
-		path_program = os.path.abspath(program)
-
 		# If there is no file, then no test.
-		if not os.path.exists(path_program):
-			raise FileNotFoundError("[FATAL ERROR] File (executable) named \"%s\" not found." % (path_program))
+		if not os.path.exists(program):
+			raise FileNotFoundError("[FATAL ERROR] File (executable) named \"%s\" not found." % (program))
 
 		suite = BaseSuite()
 		for test in self.__tests:
 			print("-- Performing %s..." % (test.name))
-			result = test.run(path_program, check_output, timeout_factor)
+			result = test.run(program, check_output, timeout_factor)
 			print(result)
-			suite.add_result(test.name, test.categories, result)
+			suite.add_result(test, result)
 
 		return suite
