@@ -2,24 +2,25 @@ import os
 
 import testsuites.base as base
 
-from typing import Iterable, Tuple, List
+from typing import Iterable, Tuple, List, Dict, Optional
 
 TEST_DATA_DIR = 'testdata'
-SUM_DIR = os.path.join(TEST_DATA_DIR, 'sum')
+SUITE_NAME = 'sum'
+SUM_DIR = os.path.join(TEST_DATA_DIR, SUITE_NAME)
 
-def test_naming(a: int, b: int, is_file: bool = True) -> str:
+def __test_naming(a: int, b: int, is_file: bool = True) -> str:
 	if is_file:
 		return "test_%d_%d" % (a, b)
 	return "%d + %d" % (a, b)
 
-def file_naming(a: int, b: int, suffix: str) -> str:
-	return "%s.%s" % (test_naming(a, b), suffix)
+def __file_naming(a: int, b: int, suffix: str) -> str:
+	return "%s.%s" % (__test_naming(a, b), suffix)
 
-def file_dir_naming(a: int, b: int, suffix: str) -> str:
-	basename = file_naming(a, b, suffix)
+def __file_dir_naming(a: int, b: int, suffix: str) -> str:
+	basename = __file_naming(a, b, suffix)
 	return os.path.join(SUM_DIR, basename)
 
-def generate_tests() -> Iterable[Tuple[str, List[str], str, str]]:
+def __generate_tests() -> Iterable[Tuple[str, List[str], str, str]]:
 	paths = [TEST_DATA_DIR, SUM_DIR]
 
 	for p in paths:
@@ -33,10 +34,10 @@ def generate_tests() -> Iterable[Tuple[str, List[str], str, str]]:
 
 	for a in range(1, 10):
 		for b in range(10, 20):
-			name = test_naming(a, b, False)
-			raw_input = file_dir_naming(a, b, 'in')
-			raw_output = file_dir_naming(a, b, 'out')
-			raw_expected = file_dir_naming(a, b, 'ref')
+			name = __test_naming(a, b, False)
+			raw_input = __file_dir_naming(a, b, 'in')
+			raw_output = __file_dir_naming(a, b, 'out')
+			raw_expected = __file_dir_naming(a, b, 'ref')
 			with open(raw_input, 'w') as stream:
 				stream.write("%d %d\n" % (a, b))
 			with open(raw_expected, 'w') as stream:
@@ -46,13 +47,16 @@ def generate_tests() -> Iterable[Tuple[str, List[str], str, str]]:
 
 	return generated
 
-def get_instance() -> base.BaseTester:
+def get_instance() -> Tuple[base.BaseTester, Optional[Dict[str, float]]]:
+	ALL_COEFFICIENTS = ['simple']
+
 	hello_tester = base.BaseTester(is_stdin_input = False, is_raw_input = True, is_raw_output = False)
 
-	tests = generate_tests()
+	tests = __generate_tests()
+	coefficients = base.get_coefficients(SUITE_NAME, ALL_COEFFICIENTS)
 
 	for test_data in tests:
 		test_name, test_input, test_output_stream, test_expected = test_data
-		hello_tester.add_success(test_name, test_input, test_expected, test_output_stream)
+		hello_tester.add_success(test_name, test_input, test_expected, test_output_stream, categories = ['simple', 'a + b'])
 
-	return hello_tester
+	return hello_tester, coefficients

@@ -2,7 +2,7 @@ import os
 import subprocess
 
 from enum import Enum
-from typing import List, Union, Tuple, Optional, Dict
+from typing import List, Union, Tuple, Optional, Dict, Iterable, Set
 
 class Errno(Enum):
 	ERROR_SUCCESS = 'ok'
@@ -35,24 +35,72 @@ class BaseResult:
 
 class BaseSuite:
 	def __init__(self):
-		self.__results: List[Tuple[str, BaseResult]] = []
+		self.__results: List[Tuple[str, Set[str], BaseResult]] = []
 
-	def add_result(self, name: str, result: BaseResult):
-		self.__results.append((name, result))
+	def add_result(self, name: str, categories: Iterable[str], result: BaseResult):
+		if isinstance(categories, set):
+			self.__results.append((name, categories, result))
+		else:
+			self.__results.append((name, set(categories), result))
 
 	def ok(self) -> bool:
-		return all(result.ok() for _, result in self.__results)
+		return all(result.ok() for _, _, result in self.__results)
+
+	def __get_number_passed(self, category: str) -> int:
+		passed = 0
+		for results in self.__results:
+			_, categories, result = results
+			if result.ok() and category in categories:
+				passed += 1
+		return passed
+
+	def __get_number_total(self, category: str) -> int:
+		total = 0
+		for results in self.__results:
+			_, categories, _ = results
+			if category in categories:
+				total += 1
+		return total
+
+	def get_all_categories(self) -> Set[str]:
+		all_categories: Set[str] = set()
+		for results in self.__results:
+			_, categories, _ = results
+			all_categories.update(categories)
+		return all_categories
+
+	def get_raw_results(self) -> Dict[str, float]:
+		raw: Dict[str, float] = {}
+		categories = self.get_all_categories()
+
+		for category in categories:
+			passed = self.__get_number_passed(category)
+			total = self.__get_number_total(category)
+			raw[category] = (passed / total)
+
+		return raw
 
 	def json(self) -> Dict[str, dict]:
 		json_results: Dict[str, dict] = {}
 		for i, results in enumerate(self.__results):
-			name, result = results
+			name, categories, result = results
 			json_object_name = "test_%d" % (i)
 			json_single_result = {}
 			json_single_result['name'] = name
+			json_single_result['categories'] = list(categories)
 			json_single_result['passed'] = result.ok()
 			json_results[json_object_name] = json_single_result
 		return json_results
+
+def get_coefficients(suite_name: str, categories: Iterable[str]) -> Optional[Dict[str, float]]:
+	PREFIX = 'SE_C_PROG'
+	coefficients: Dict[str, float] = {}
+	for category in categories:
+		raw_value = os.getenv("%s_%s_%s" % (PREFIX, suite_name.upper(), category.upper()))
+		if raw_value is None:
+			return None
+		coefficients[category] = float(raw_value)
+	return coefficients
 
 def escape(x: str) -> str:
 	s = ''
@@ -130,8 +178,9 @@ def err_unknown(what: str) -> BaseResult:
 	return BaseResult(Errno.ERROR_UNKNOWN, escape(what))
 
 class BaseTest:
-	def __init__(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], expected: Optional[Union[str, int, float, List[str], List[int], List[float]]], output_stream: Optional[str], timeout: int, exitcode: int, is_stdin_input: bool, is_raw_input: bool, is_raw_output: bool, input_separator: str):
+	def __init__(self, name: str, categories: Iterable[str], input: Union[str, int, float, List[str], List[int], List[float]], expected: Optional[Union[str, int, float, List[str], List[int], List[float]]], output_stream: Optional[str], timeout: int, exitcode: int, is_stdin_input: bool, is_raw_input: bool, is_raw_output: bool, input_separator: str):
 		self.name = name
+		self.categories = categories
 
 		self.__input = input
 		self.__expected = expected
@@ -294,12 +343,12 @@ class BaseTester:
 		if not self.__is_stdin_input and not self.__is_raw_input:
 			raise NotImplementedError('[FATAL ERROR] Not raw input (from file) with cmd\'s arguments communication is not supported yet.')
 
-	def add_success(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], expected: Union[str, int, float, List[str], List[int], List[float]], output_stream: str = None, timeout: int = 1):
-		test = BaseTest(name, input, expected, output_stream, timeout, 0, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator)
+	def add_success(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], expected: Union[str, int, float, List[str], List[int], List[float]], output_stream: str = None, timeout: int = 1, categories: Iterable[str] = []):
+		test = BaseTest(name, categories, input, expected, output_stream, timeout, 0, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator)
 		self.__tests.append(test)
 
-	def add_failed(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], exitcode: int, timeout: int = 1):
-		test = BaseTest(name, input, None, None, timeout, exitcode, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator)
+	def add_failed(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], exitcode: int, timeout: int = 1, categories: Iterable[str] = []):
+		test = BaseTest(name, categories, input, None, None, timeout, exitcode, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator)
 		self.__tests.append(test)
 
 	def run(self, program: str, check_output: bool, timeout_factor: float) -> BaseSuite:
@@ -314,6 +363,6 @@ class BaseTester:
 			print("-- Performing %s..." % (test.name))
 			result = test.run(path_program, check_output, timeout_factor)
 			print(result)
-			suite.add_result(test.name, result)
+			suite.add_result(test.name, test.categories, result)
 
 		return suite
