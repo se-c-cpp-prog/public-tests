@@ -40,6 +40,8 @@ def __generate_tests() -> Iterable[Tuple[str, List[str], str, str]]:
 			raw_expected = __file_dir_naming(a, b, 'ref')
 			with open(raw_input, 'w') as stream:
 				stream.write("%d %d\n" % (a, b))
+			if os.path.exists(raw_output):
+				os.remove(raw_output)
 			with open(raw_expected, 'w') as stream:
 				stream.write("%d\n" % (a + b))
 			test_data = (name, [raw_input, raw_output], raw_output, raw_expected)
