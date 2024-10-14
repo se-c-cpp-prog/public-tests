@@ -92,11 +92,28 @@ class BaseSuite:
 			json_results[json_object_name] = json_single_result
 		return json_results
 
+def escape_envname(name: str) -> str:
+	s = ''
+	for c in name:
+		if c == ' ':
+			s += '_'
+		elif c == '+':
+			s += 'PLUS'
+		elif c == '-':
+			s += 'MINUS'
+		elif c == '*':
+			s += 'MULTIPLY'
+		elif c == '/':
+			s += 'DIVIDE'
+		else:
+			s += c
+	return s
+
 def get_coefficients(suite_name: str, categories: Iterable[str]) -> Optional[Dict[str, float]]:
 	PREFIX = 'SE_C_PROG'
 	coefficients: Dict[str, float] = {}
 	for category in categories:
-		raw_value = os.getenv("%s_%s_%s" % (PREFIX, suite_name.upper(), category.upper()))
+		raw_value = os.getenv("%s_%s_%s" % (PREFIX, suite_name.upper(), escape_envname(category.upper())))
 		if raw_value is None:
 			return None
 		coefficients[category] = float(raw_value)
