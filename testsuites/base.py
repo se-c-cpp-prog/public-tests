@@ -105,48 +105,48 @@ def to_str(input: Union[str, int, float, List[str], List[int], List[float]], sep
 		raise TypeError('Input must be a string, integer, float, or a list of strings, integers, or floats.')
 
 def err_ok() -> BaseResult:
-	return BaseResult(Errno.ERROR_SUCCESS, None)
+	return BaseResult(Errno.ERROR_SUCCESS)
 
 def err_should_pass(exitcode: int) -> BaseResult:
-	return BaseResult(Errno.ERROR_SHOULD_PASS, "program returned exitcode %d" % (exitcode))
+	return BaseResult(Errno.ERROR_SHOULD_PASS, what = "program returned exitcode %d" % (exitcode))
 
 def err_should_fail() -> BaseResult:
-	return BaseResult(Errno.ERROR_SHOULD_FAIL, 'program returned exitcode = 0')
+	return BaseResult(Errno.ERROR_SHOULD_FAIL, what = 'program returned exitcode = 0')
 
 def err_stderr_empty() -> BaseResult:
-	return BaseResult(Errno.ERROR_STDERR_EMPTY, 'program should write any human readable error message for user')
+	return BaseResult(Errno.ERROR_STDERR_EMPTY, what = 'program should write any human readable error message for user')
 
 def err_stdout_not_empty(stdout: str) -> BaseResult:
-	return BaseResult(Errno.ERROR_STDOUT_NOT_EMPTY, "stdout: \"%s\"" % (escape(stdout)))
+	return BaseResult(Errno.ERROR_STDOUT_NOT_EMPTY, what = "stdout: \"%s\"" % (escape(stdout)))
 
 def err_stderr_not_empty(stderr: str) -> BaseResult:
-	return BaseResult(Errno.ERROR_STDERR_NOT_EMPTY, "stderr: \"%s\"" % (escape(stderr)))
+	return BaseResult(Errno.ERROR_STDERR_NOT_EMPTY, what = "stderr: \"%s\"" % (escape(stderr)))
 
 def err_exitcode(actual_exitcode: int, expected_exitcode: int) -> BaseResult:
-	return BaseResult(Errno.ERROR_EXITCODE, "expected %d, but actual %d" % (actual_exitcode, expected_exitcode))
+	return BaseResult(Errno.ERROR_EXITCODE, what = "expected %d, but actual %d" % (actual_exitcode, expected_exitcode))
 
 def err_timeout() -> BaseResult:
 	return BaseResult(Errno.ERROR_TIMEOUT)
 
 def err_assertion_lines(actual: str, expected: str, lineno: int) -> BaseResult:
 	if expected == '':
-		return BaseResult(Errno.ERROR_ASSERTION, 'newline at the end of stream is necessary')
-	return BaseResult(Errno.ERROR_ASSERTION, "on output line #%d expected was \"%s\", but actual is \"%s\"" % (lineno, escape(expected), escape(actual)))
+		return BaseResult(Errno.ERROR_ASSERTION, what = 'newline at the end of stream is necessary')
+	return BaseResult(Errno.ERROR_ASSERTION, what = "on output line #%d expected was \"%s\", but actual is \"%s\"" % (lineno, escape(expected), escape(actual)))
 
 def err_assertion_len(actual_len: int, expected_len: int) -> BaseResult:
-	return BaseResult(Errno.ERROR_ASSERTION, "the number of rows in the actual solution (%d) does not match the number of rows in the expected solution (%d)" % (actual_len, expected_len))
+	return BaseResult(Errno.ERROR_ASSERTION, what = "the number of rows in the actual solution (%d) does not match the number of rows in the expected solution (%d)" % (actual_len, expected_len))
 
 def err_file_not_found(file: str) -> BaseResult:
-	return BaseResult(Errno.ERROR_FILE_NOT_FOUND, "file \"%s\" should be created after running program" % (file))
+	return BaseResult(Errno.ERROR_FILE_NOT_FOUND, what = "file \"%s\" should be created after running program" % (file))
 
 def err_file_created_on_error(file: str) -> BaseResult:
-	return BaseResult(Errno.ERROR_FILE_CREATED_ON_ERROR, "file \"%s\" should not be created after program\'s failing" % (file))
+	return BaseResult(Errno.ERROR_FILE_CREATED_ON_ERROR, what = "file \"%s\" should not be created after program\'s failing" % (file))
 
 def err_file_recreated_on_error(file: str) -> BaseResult:
-	return BaseResult(Errno.ERROR_FILE_RECREATED_ON_ERROR, "file \"%s\" should be same as it was before program\'s failing" % (file))
+	return BaseResult(Errno.ERROR_FILE_RECREATED_ON_ERROR, what = "file \"%s\" should be same as it was before program\'s failing" % (file))
 
 def err_unknown(what: str) -> BaseResult:
-	return BaseResult(Errno.ERROR_UNKNOWN, escape(what))
+	return BaseResult(Errno.ERROR_UNKNOWN, what = escape(what))
 
 def get_time() -> int:
 	return time.time_ns() // 1000000
