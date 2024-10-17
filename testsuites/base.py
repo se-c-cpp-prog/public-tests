@@ -88,11 +88,17 @@ def escape(x: str) -> str:
 			s += c
 	return s
 
-def to_list(input: Union[str, int, float, List[str], List[int], List[float]]) -> List[str]:
+def to_list(input: Union[str, int, float, List[str], List[int], List[float]], need_newline: bool = True) -> List[str]:
 	if isinstance(input, (str, int, float)):
-		return [str(input)] + ['']
+		l = [str(input)]
+		if need_newline:
+			l.append('')
+		return l
 	elif isinstance(input, list):
-		return [str(item) for item in input] + ['']
+		l = [str(item) for item in input]
+		if need_newline:
+			l.append('')
+		return l
 	else:
 		raise TypeError('Input must be a string, integer, float, or a list of strings, integers, or floats.')
 
@@ -177,7 +183,7 @@ class BaseTest:
 
 		# If it's not STDIN communication, turn input to list as cmd's arguments.
 		if not self.__is_stdin_input:
-			full_program += to_list(input)
+			full_program += to_list(input, False)
 
 		# If it's STDIN communication, then process should be created and then communicated.
 		# Otherwise, run once.
