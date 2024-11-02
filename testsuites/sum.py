@@ -4,9 +4,8 @@ import testsuites.base as base
 
 from typing import Iterable, Tuple, List, Dict, Optional
 
-TEST_DATA_DIR = 'testdata'
 SUITE_NAME = 'sum'
-SUM_DIR = os.path.join(TEST_DATA_DIR, SUITE_NAME)
+SUITE_DIR = base.make_suite_dirname(SUITE_NAME)
 
 def __test_naming(a: int, b: int, is_file: bool = True) -> str:
 	if is_file:
@@ -18,10 +17,10 @@ def __file_naming(a: int, b: int, suffix: str) -> str:
 
 def __file_dir_naming(a: int, b: int, suffix: str) -> str:
 	basename = __file_naming(a, b, suffix)
-	return os.path.join(SUM_DIR, basename)
+	return os.path.join(SUITE_DIR, basename)
 
 def __generate_tests() -> Iterable[Tuple[str, List[str], str, str]]:
-	paths = [TEST_DATA_DIR, SUM_DIR]
+	paths = [base.TESTDATA_DIR, SUITE_DIR]
 
 	for p in paths:
 		if os.path.exists(p) and not os.path.isdir(p):

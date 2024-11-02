@@ -1,9 +1,15 @@
 import os
 import subprocess
 import time
+import wget
+import zipfile
+import tarfile
+import sys
 
 from enum import Enum
-from typing import List, Union, Tuple, Optional, Dict, Iterable, Set
+from typing import List, Union, Tuple, Optional, Dict, Iterable, Set, Callable
+
+TESTDATA_DIR = 'testdata'
 
 class Errno(Enum):
 	ERROR_SUCCESS = 'ok'
@@ -18,6 +24,8 @@ class Errno(Enum):
 	ERROR_FILE_NOT_FOUND = 'file not found'
 	ERROR_FILE_CREATED_ON_ERROR = 'file was created (as empty or with undefined state) after failing'
 	ERROR_FILE_RECREATED_ON_ERROR = 'file was recreated (as empty or with undefined state) after failing'
+	ERROR_TYPE_ERROR = 'type casting error'
+	ERROR_NO_NEWLINE = 'no newline at EOF'
 	ERROR_UNKNOWN = 'unknown'
 
 class BaseResult:
@@ -46,10 +54,54 @@ class BaseResult:
 	def ok(self) -> bool:
 		return self.__errno == Errno.ERROR_SUCCESS
 
+def is_windows() -> bool:
+	return sys.platform.startswith('win32')
+
+def suite_to_dirname(suite: str) -> str:
+	# All directories should have `_` instead of `-`.
+	return suite.replace('-', '_')
+
+def ensure_existence_directory(dirname: str):
+	# Check if it's exists, otherwise create parent.
+	if not os.path.exists(dirname):
+		ensure_existence_directory(os.path.abspath(os.path.join(dirname, os.pardir)))
+
+	# Check if it is directory, otherwise - it's fatal error.
+	if os.path.exists(dirname) and os.path.isfile(dirname):
+		raise ValueError("[FATAL ERROR] Provided path \"%s\" should be directory." % (os.path.abspath(dirname)))
+
+	# Create directory.
+	if not os.path.exists(dirname):
+		os.mkdir(dirname)
+
+def make_suite_dirname(suite: str) -> str:
+	ensure_existence_directory(TESTDATA_DIR)
+	p = os.path.join(TESTDATA_DIR, suite_to_dirname(suite))
+	ensure_existence_directory(p)
+	return p
+
+def download_and_release(suite: str, tag: str = 'latest'):
+	URL_ORGANIZATION = 'se-c-cpp-prog'
+	URL_REPOSITORY = 'public-tests'
+
+	win32 = is_windows()
+	url = "https://github.com/%s/%s/releases/download/%s/%s-tests.%s" % (URL_ORGANIZATION, URL_REPOSITORY, ("%s-%s" % (suite, tag)), suite, ('zip' if win32 else 'tar.gz'))
+	directory = make_suite_dirname(suite)
+	output = wget.download(url)
+
+	if win32:
+		with zipfile.ZipFile(output, 'r') as zip:
+			zip.extractall(directory)
+	else:
+		with tarfile.TarFile(output, 'r') as tar:
+			tar.extractall(directory)
+
+	os.remove(output)
+
 def escape_envname(name: str) -> str:
 	s = ''
 	for c in name:
-		if c == ' ':
+		if c == ' ' or c == '-':
 			s += '_'
 		elif c == '+':
 			s += 'PLUS'
@@ -67,7 +119,7 @@ def get_coefficients(suite_name: str, categories: Iterable[str]) -> Optional[Dic
 	PREFIX = 'SE_C_PROG'
 	coefficients: Dict[str, float] = {}
 	for category in categories:
-		raw_value = os.getenv("%s_%s_%s" % (PREFIX, suite_name.upper(), escape_envname(category.upper())))
+		raw_value = os.getenv("%s_%s_%s" % (PREFIX, escape_envname(suite_name.upper()), escape_envname(category.upper())))
 		if raw_value is None:
 			return None
 		coefficients[category] = float(raw_value)
@@ -139,6 +191,9 @@ def err_assertion_lines(actual: str, expected: str, lineno: int) -> BaseResult:
 		return BaseResult(Errno.ERROR_ASSERTION, what = 'newline at the end of stream is necessary')
 	return BaseResult(Errno.ERROR_ASSERTION, what = "on output line #%d expected was \"%s\", but actual is \"%s\"" % (lineno, escape(expected), escape(actual)))
 
+def err_assertion_pos(i: int, j: int, actual: str, expected: str) -> BaseResult:
+	return BaseResult(Errno.ERROR_ASSERTION, what = "at (row, column)=(%d, %d) position should be \"%s\", but actual is \"%s\"" % (i, j, expected, actual))
+
 def err_assertion_len(actual_len: int, expected_len: int) -> BaseResult:
 	return BaseResult(Errno.ERROR_ASSERTION, what = "the number of rows in the actual solution (%d) does not match the number of rows in the expected solution (%d)" % (actual_len, expected_len))
 
@@ -151,14 +206,84 @@ def err_file_created_on_error(file: str) -> BaseResult:
 def err_file_recreated_on_error(file: str) -> BaseResult:
 	return BaseResult(Errno.ERROR_FILE_RECREATED_ON_ERROR, what = "file \"%s\" should be same as it was before program\'s failing" % (file))
 
+def err_type_error(i: int, j: int, type_error_message: str) -> BaseResult:
+	return BaseResult(Errno.ERROR_TYPE_ERROR, what = "at (row, column)=(%d, %d) position should be %s" % (i, j, type_error_message))
+
+def err_no_newline() -> BaseResult:
+	return BaseResult(Errno.ERROR_NO_NEWLINE)
+
 def err_unknown(what: str) -> BaseResult:
 	return BaseResult(Errno.ERROR_UNKNOWN, what = escape(what))
 
 def get_time() -> int:
 	return time.time_ns() // 1000000
 
+def basic_compare_fn(actual: str, expected: str) -> bool:
+	# Compare.
+	return actual == expected
+
+class BaseComparator:
+	def __init__(self):
+		pass
+
+	def compare(self, actual: List[str], expected: List[str]) -> BaseResult:
+		return self._compare_details(actual, expected, basic_compare_fn, 'plain text (string)')
+
+	def _compare_details(self, actual: List[str], expected: List[str], compare_fn: Callable[[str, str], bool], type_error_message: str, assertion_message_fn: Callable[[int, int, str, str], BaseResult] = None) -> BaseResult:
+		actual_len = len(actual)
+		expected_len = len(expected)
+
+		# CASE: fatal assertion.
+		if actual_len != expected_len:
+			return err_assertion_len(actual_len, expected_len)
+
+		# CASE: assertion.
+		for i in range(min(actual_len, expected_len)):
+			actual_contents = actual[i].strip().split(' ')
+			expected_contents = expected[i].strip().split(' ')
+
+			actual_contents_len = len(actual_contents)
+			expected_contents_len = len(expected_contents)
+
+			# CASE: fatal assertion.
+			if actual_contents_len != expected_contents_len:
+				return err_assertion_len(actual_contents_len, expected_contents_len)
+
+			# CASE: Newline, when it's only one element '', then newline found.
+			if expected_contents_len == 1 and expected_contents[0] == '' and actual_contents[0] == '':
+				continue
+			elif expected_contents_len == 1 and expected_contents[0] == '' and actual_contents[0] != '':
+				return err_no_newline()
+
+			for j in range(min(actual_contents_len, expected_contents_len)):
+				a = actual_contents[j]
+				e = expected_contents[j]
+				try:
+					if not compare_fn(a, e):
+						if assertion_message_fn is None:
+							return err_assertion_pos(i, j, a, e)
+						else:
+							return assertion_message_fn(i, j, a, e)
+				except ValueError:
+					return err_type_error(i, j, type_error_message)
+
+		return err_ok()
+
 class BaseTest:
-	def __init__(self, name: str, categories: Iterable[str], input: Union[str, int, float, List[str], List[int], List[float]], expected: Optional[Union[str, int, float, List[str], List[int], List[float]]], output_stream: Optional[str], timeout: int, exitcode: int, is_stdin_input: bool, is_raw_input: bool, is_raw_output: bool, input_separator: str):
+	def __init__(self,
+			name: str,
+			categories: Iterable[str],
+			input: Union[str, int, float, List[str], List[int], List[float]],
+			expected: Optional[Union[str, int, float, List[str], List[int], List[float]]],
+			output_stream: Optional[str],
+			timeout: float,
+			exitcode: int,
+			is_stdin_input: bool,
+			is_raw_input: bool,
+			is_raw_output: bool,
+			input_separator: str,
+			comparator: Optional[BaseComparator]
+	):
 		self.name = name
 		self.categories = categories
 
@@ -173,13 +298,15 @@ class BaseTest:
 		self.__is_raw_output = is_raw_output
 		self.__input_separator = input_separator
 
+		self.__comparator = comparator
+
 		self.__passes = exitcode == 0
 
 	# Returns None, if there was a timeout expired exception.
 	# Otherwise, returns tuple of STDOUT, STDERR and RETURNCODE of program.
-	def __runner(self, program: str, input: Union[str, int, float, List[str], List[int], List[float]], timeout: int, timeout_factor: float) -> Tuple[int, Optional[Tuple[str, str, int]]]:
+	def __runner(self, program: str, input: Union[str, int, float, List[str], List[int], List[float]], timeout: float, timeout_factor: float) -> Tuple[int, Optional[Tuple[str, str, int]]]:
 		full_program = [program]
-		full_timeout = int(timeout * timeout_factor)
+		full_timeout = timeout * timeout_factor
 
 		# If it's not STDIN communication, turn input to list as cmd's arguments.
 		if not self.__is_stdin_input:
@@ -212,11 +339,13 @@ class BaseTest:
 		else:
 			start = get_time()
 			try:
-				results = subprocess.run(full_program, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, timeout = full_timeout, universal_newlines = True)
+				proc = subprocess.Popen(full_program, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, universal_newlines = True)
+				stdout, stderr = proc.communicate(timeout = full_timeout)
 				end = get_time()
-				return (end - start, (results.stdout, results.stderr, results.returncode))
+				return (end - start, (stdout, stderr, proc.returncode))
 			except subprocess.TimeoutExpired:
 				end = get_time()
+				proc.kill()
 				return (end - start, None)
 
 	def __collect_to_result(self, stdout: str, stderr: str, returncode: int, timer: int, base_result: BaseResult) -> BaseResult:
@@ -277,19 +406,7 @@ class BaseTest:
 				expected_content = file.read().split('\n')
 
 		# CASE: assertion.
-		actual_len = len(actual_content)
-		expected_len = len(expected_content)
-		for i in range(min(actual_len, expected_len)):
-			a = actual_content[i]
-			e = expected_content[i]
-			if a != e:
-				return err_assertion_lines(a, e, i)
-
-		# CASE: fatal assertion.
-		if actual_len != expected_len:
-			return err_assertion_len(actual_len, expected_len)
-
-		return err_ok()
+		return self.__comparator.compare(actual_content, expected_content)
 
 	def __should_fail(self, stdout: str, stderr: str, returncode: int) -> BaseResult:
 		# CASE: Program returns 0.
@@ -432,12 +549,12 @@ class BaseTester:
 		if not self.__is_stdin_input and not self.__is_raw_input:
 			raise NotImplementedError('[FATAL ERROR] Not raw input (from file) with cmd\'s arguments communication is not supported yet.')
 
-	def add_success(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], expected: Union[str, int, float, List[str], List[int], List[float]], output_stream: str = None, timeout: int = 1, categories: Iterable[str] = []):
-		test = BaseTest(name, categories, input, expected, output_stream, timeout, 0, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator)
+	def add_success(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], expected: Union[str, int, float, List[str], List[int], List[float]], output_stream: str = None, timeout: float = 1.0, categories: Iterable[str] = [], comparator: BaseComparator = BaseComparator()):
+		test = BaseTest(name, categories, input, expected, output_stream, timeout, 0, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator, comparator)
 		self.__tests.append(test)
 
-	def add_failed(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], exitcode: int, timeout: int = 1, categories: Iterable[str] = []):
-		test = BaseTest(name, categories, input, None, None, timeout, exitcode, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator)
+	def add_failed(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], exitcode: int, timeout: float = 1.0, categories: Iterable[str] = []):
+		test = BaseTest(name, categories, input, None, None, timeout, exitcode, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator, None)
 		self.__tests.append(test)
 
 	def run(self, program: str, check_output: bool, timeout_factor: float) -> BaseSuite:

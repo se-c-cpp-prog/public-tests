@@ -3,14 +3,18 @@
 import argparse
 import os
 import json
+import random
+import string
 
 from typing import Dict, Tuple, Optional
 
 import testsuites.base as base
 import testsuites.sum as suite_sum
+import testsuites.invertible_matrix as suite_invertible_matrix
 
 SELECTOR: Dict[str, Tuple[base.BaseTester, Optional[Dict[str, float]]]] = {
-	'sum': suite_sum.get_instance()
+	suite_sum.SUITE_NAME: suite_sum.get_instance(),
+	suite_invertible_matrix.SUITE_NAME: suite_invertible_matrix.get_instance()
 }
 
 def __t_or_f(arg: str, flag_name: str) -> bool:
@@ -27,11 +31,22 @@ def __calculate_final_sum(results: base.BaseSuite, coefficients: Dict[str, float
 	if coefficients is None:
 		return None
 	f_sum = 0.0
+	n_categories = 0
 	raw_results = results.get_raw_results()
 	for category, coefficient in coefficients.items():
 		raw = raw_results[category]
 		f_sum += coefficient * raw
-	return f_sum
+		n_categories += 1
+	return f_sum / n_categories
+
+def __generate_unique_filename() -> str:
+	while True:
+		random_part = ''.join(random.choices(string.ascii_letters + string.digits, k = 10))
+		filepath = "%s.json" % (random_part)
+
+		# Check if the file already exists
+		if not os.path.exists(filepath):
+			return filepath
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
@@ -39,10 +54,11 @@ if __name__ == '__main__':
 	parser.add_argument('--suite', help = 'select testing task', type = str, choices = SELECTOR, required = True)
 	parser.add_argument('--check-output', help = 'is it necessary to check the program\'s output', type = str, default = 'TRUE')
 	parser.add_argument('--timeout-factor', help = 'maximum execution time multiplier', type = float, default = 1.0)
-	parser.add_argument('--json-output-name', help = 'JSON results: json output filename', type = str, default = None)
-	parser.add_argument('--json-target-system', help = 'JSON results: json run target system', type = str, default = None)
-	parser.add_argument('--json-use-compiler', help = 'JSON results: json used compiler for building program', type = str, default = None)
-	parser.add_argument('--json-build-type', help = 'JSON results: json build type compiled and run program', type = str, default = None)
+	parser.add_argument('--json-quick', help = 'JSON results: quick generating output filename, run target system, used compile for building program, build type compiled and run program for quick testing', type = str, default = 'FALSE')
+	parser.add_argument('--json-output-name', help = 'JSON results: output filename', type = str, default = None)
+	parser.add_argument('--json-target-system', help = 'JSON results: run target system', type = str, default = None)
+	parser.add_argument('--json-use-compiler', help = 'JSON results: used compiler for building program', type = str, default = None)
+	parser.add_argument('--json-build-type', help = 'JSON results: build type compiled and run program', type = str, default = None)
 	parser.add_argument('--json-final-results', help = 'calculation of coefficients for tests and output to JSON file (if activated) final test results, if necessary environment variables exist', type = str, default = 'FALSE')
 
 	args = parser.parse_args()
@@ -56,15 +72,17 @@ if __name__ == '__main__':
 	setup_timeout_factor: float = args.timeout_factor
 
 	# JSON results.
+	json_quick: bool = __t_or_f(args.json_quick, "json-quick")
 	json_output_name: str = args.json_output_name
 	json_target_system: str = args.json_target_system
 	json_use_compiler: str = args.json_use_compiler
 	json_build_type: str = args.json_build_type
 	json_final_results: bool = __t_or_f(args.json_final_results, "json-final-results")
 
-	if not json_output_name is None and (json_target_system is None or json_use_compiler is None or json_build_type is None):
-		print('usage: --json-output-name requires --json-target-system, --json-use-compiler and --json-build-type.')
-		exit(1)
+	if not json_quick:
+		if not json_output_name is None and (json_target_system is None or json_use_compiler is None or json_build_type is None):
+			print('usage: --json-output-name requires --json-target-system, --json-use-compiler and --json-build-type.')
+			exit(1)
 
 	task_select, coefficients = SELECTOR[base_suite]
 	results = task_select.run(base_program, setup_check_output, setup_timeout_factor)
@@ -72,12 +90,12 @@ if __name__ == '__main__':
 
 	json_final_sum = __calculate_final_sum(results, coefficients)
 
-	if not json_output_name is None:
+	if not json_output_name is None or json_quick:
 		json_full_dict: Dict[str, dict] = {}
 
-		json_full_dict['target_system'] = json_target_system
-		json_full_dict['use_compiler'] = json_use_compiler
-		json_full_dict['build_type'] = json_build_type
+		json_full_dict['target_system'] = json_target_system if not json_quick else 'Any target system'
+		json_full_dict['use_compiler'] = json_use_compiler if not json_quick else 'Any use compiler'
+		json_full_dict['build_type'] = json_build_type if not json_quick else 'Any build type'
 		json_full_dict['passed'] = results.ok()
 		if json_final_sum is not None:
 			json_full_dict['final_sum'] = json_final_sum
@@ -86,7 +104,12 @@ if __name__ == '__main__':
 
 		json_object = json.dumps(json_full_dict, indent = 4)
 
+		if json_output_name is None:
+			json_output_name = __generate_unique_filename()
+
 		with open(json_output_name, 'w') as file:
 			file.write(json_object)
+
+		print(f"-- JSON reported in {json_output_name}")
 
 	exit(exitcode)
