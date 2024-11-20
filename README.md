@@ -94,3 +94,15 @@
     .\venv\Scripts\pip3.exe install -r requirements.txt
     # на Windows
     ```
+
+* запуск основного скрипта:
+
+    ```bash
+    ./venv/bin/python <путь к main.py> --program <путь к исполняемому файлу> --suite <выбор задания>
+    # на Linux/MacOS
+    ```
+
+    ```powershell
+    .\venv\Scripts\python.exe <путь к main.py> --program <путь к исполняемому файлу> --suite <выбор задания>
+    # на Windows
+    ```
