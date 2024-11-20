@@ -406,7 +406,11 @@ class BaseTest:
 				expected_content = file.read().split('\n')
 
 		# CASE: assertion.
-		return self.__comparator.compare(actual_content, expected_content)
+		try:
+			result = self.__comparator.compare(actual_content, expected_content)
+			return result
+		except Exception as e:
+			return err_unknown(str(e))
 
 	def __should_fail(self, stdout: str, stderr: str, returncode: int) -> BaseResult:
 		# CASE: Program returns 0.
