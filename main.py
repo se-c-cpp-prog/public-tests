@@ -11,10 +11,12 @@ from typing import Dict, Tuple, Optional
 import testsuites.base as base
 import testsuites.sum as suite_sum
 import testsuites.invertible_matrix as suite_invertible_matrix
+import testsuites.sprintf as suite_sprintf
 
 SELECTOR: Dict[str, Tuple[base.BaseTester, Optional[Dict[str, float]]]] = {
 	suite_sum.SUITE_NAME: suite_sum.get_instance(),
-	suite_invertible_matrix.SUITE_NAME: suite_invertible_matrix.get_instance()
+	suite_invertible_matrix.SUITE_NAME: suite_invertible_matrix.get_instance(),
+	suite_sprintf.SUITE_NAME: suite_sprintf.get_instance()
 }
 
 def __t_or_f(arg: str, flag_name: str) -> bool:
@@ -28,15 +30,16 @@ def __t_or_f(arg: str, flag_name: str) -> bool:
 		exit(1)
 
 def __calculate_final_sum(results: base.BaseSuite, coefficients: Dict[str, float]) -> Optional[float]:
-	if coefficients is None:
-		return None
+	if coefficients is None or len(coefficients) == 0:
+		return 0.0
+	n_categories = len(coefficients)
 	f_sum = 0.0
-	n_categories = 0
 	raw_results = results.get_raw_results()
 	for category, coefficient in coefficients.items():
+		if category not in raw_results:
+			continue
 		raw = raw_results[category]
 		f_sum += coefficient * raw
-		n_categories += 1
 	return f_sum / n_categories
 
 def __generate_unique_filename() -> str:
@@ -59,7 +62,7 @@ if __name__ == '__main__':
 	parser.add_argument('--json-target-system', help = 'JSON results: run target system', type = str, default = None)
 	parser.add_argument('--json-use-compiler', help = 'JSON results: used compiler for building program', type = str, default = None)
 	parser.add_argument('--json-build-type', help = 'JSON results: build type compiled and run program', type = str, default = None)
-	parser.add_argument('--json-final-results', help = 'calculation of coefficients for tests and output to JSON file (if activated) final test results, if necessary environment variables exist', type = str, default = 'FALSE')
+	parser.add_argument('--json-final-results', help = '(DEPRECATED) JSON results: calculation of coefficients for tests and output to JSON file (if activated) final test results, if necessary environment variables exist', type = str, default = 'FALSE')
 
 	args = parser.parse_args()
 
@@ -97,8 +100,7 @@ if __name__ == '__main__':
 		json_full_dict['use_compiler'] = json_use_compiler if not json_quick else 'Any use compiler'
 		json_full_dict['build_type'] = json_build_type if not json_quick else 'Any build type'
 		json_full_dict['passed'] = results.ok()
-		if json_final_sum is not None:
-			json_full_dict['final_sum'] = json_final_sum
+		json_full_dict['final_sum'] = json_final_sum
 		json_full_dict['raw_results'] = results.get_raw_results()
 		json_full_dict.update(results.json())
 
