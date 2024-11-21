@@ -85,7 +85,7 @@ def __generate_bad_tests() -> Iterable[Tuple[str, str, int, __TestData]]:
 
 	for i, t in enumerate(tests):
 		test = __TestData(t[0], t[1])
-		test_data = (f"Bad situation #{i}: \"{'\" \"'.join(test.get_input())}\"", category, 1, test) # TODO: Double check returncode for all bad situations.
+		test_data = (f"Bad situation #{i}: \"{'\" \"'.join(test.get_input())}\"", category, 1, test)
 		generated.append(test_data)
 
 	return generated
