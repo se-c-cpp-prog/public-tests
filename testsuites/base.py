@@ -440,23 +440,26 @@ class BaseTest:
 		return err_ok()
 
 	def run(self, program: str, check_output: bool, timeout_factor: float) -> BaseResult:
-		timer, results = self.__runner(program, self.__input, self.__timeout, timeout_factor)
+		try:
+			timer, results = self.__runner(program, self.__input, self.__timeout, timeout_factor)
 
-		# If it's None, then there was a Timeout error.
-		if results is None:
-			timeout_result = err_timeout()
-			timeout_result.timer = timer
-			timeout_result.exitcode = -1
-			return timeout_result
+			# If it's None, then there was a Timeout error.
+			if results is None:
+				timeout_result = err_timeout()
+				timeout_result.timer = timer
+				timeout_result.exitcode = -1
+				return timeout_result
 
-		stdout, stderr, returncode = results
+			stdout, stderr, returncode = results
 
-		if self.__passes:
-			should_pass_result = self.__should_pass(stdout, stderr, returncode, check_output)
-			return self.__collect_to_result(stdout, stderr, returncode, timer, should_pass_result)
+			if self.__passes:
+				should_pass_result = self.__should_pass(stdout, stderr, returncode, check_output)
+				return self.__collect_to_result(stdout, stderr, returncode, timer, should_pass_result)
 
-		should_fail_result = self.__should_fail(stdout, stderr, returncode)
-		return self.__collect_to_result(stdout, stderr, returncode, timer, should_fail_result)
+			should_fail_result = self.__should_fail(stdout, stderr, returncode)
+			return self.__collect_to_result(stdout, stderr, returncode, timer, should_fail_result)
+		except Exception as e:
+			return err_unknown(str(e))
 
 	def get_input(self) -> str:
 		input_content = to_str(self.__input, ' ')
