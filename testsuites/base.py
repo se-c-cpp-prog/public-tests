@@ -28,8 +28,13 @@ class Errno(Enum):
 	ERROR_NO_NEWLINE = 'no newline at EOF'
 	ERROR_UNKNOWN = 'unknown'
 
+class BaseTestingType(Enum):
+	T_TEXT = "text",
+	T_BINARY = "bytes",
+	T_META = "meta"
+
 class BaseResult:
-	def __init__(self, errno: Errno, exitcode: int = 0, timer: int = 1, output: str = '<no output>', stderr: str = '<no error output>', what: Optional[str] = None):
+	def __init__(self, errno: Errno, exitcode: int = 0, timer: int = 1, output: Union[str, bytes] = '<no output>', stderr: str = '<no error output>', what: Optional[str] = None, testing_type: BaseTestingType = BaseTestingType.T_TEXT):
 		self.__errno = errno
 		self.__what = what
 
@@ -38,6 +43,8 @@ class BaseResult:
 
 		self.exitcode = exitcode
 		self.timer = timer
+
+		self.testing_type = testing_type
 
 	def get_verdict(self) -> str:
 		return self.__errno.value
@@ -111,6 +118,10 @@ def escape_envname(name: str) -> str:
 			s += 'MULTIPLY'
 		elif c == '/':
 			s += 'DIVIDE'
+		elif c == '(':
+			s += '_LEFT_BRACKET_'
+		elif c == ')':
+			s += '_RIGHT_BRACKET_'
 		else:
 			s += c
 	return s
@@ -222,12 +233,46 @@ def basic_compare_fn(actual: str, expected: str) -> bool:
 	# Compare.
 	return actual == expected
 
+def basic_compare_bytes_fn(actual: bytes, expected: str) -> bool:
+	# Compare.
+	return actual == expected
+
+class BaseMeta:
+	def __init__(self, meta: Union[str, int, float, List[str], List[int], List[float]]):
+		self.meta = meta
+
+ContentT = Union[List[str], bytes, BaseMeta]
+
 class BaseComparator:
 	def __init__(self):
 		pass
 
-	def compare(self, actual: List[str], expected: List[str]) -> BaseResult:
-		return self._compare_details(actual, expected, basic_compare_fn, 'plain text (string)')
+	def compare(self, actual: ContentT, expected: ContentT) -> BaseResult:
+		if isinstance(actual, list) and isinstance(expected, list):
+			return self._compare_details(actual, expected, basic_compare_fn, 'plain text (string)')
+		elif isinstance(actual, bytes) and isinstance(expected, bytes):
+			return self._compare_details_bytes(actual, expected, basic_compare_bytes_fn, 'bytes')
+		elif isinstance(actual, BaseMeta) and isinstance(expected, BaseMeta):
+			return err_ok() # should be always override
+		else:
+			raise TypeError("[FATAL ERROR] Expected lists of strings, raw byte sequences or meta's")
+
+	def _compare_details_bytes(self, actual: bytes, expected: bytes, compare_fn: Callable[[bytes, bytes], bool], type_error_message: str) -> BaseResult:
+		actual_len = len(actual)
+		expected_len = len(expected)
+
+		# CASE: fatal assertion.
+		if actual_len != expected_len:
+			return err_assertion_len(actual_len, expected_len)
+
+		# CASE: assertion.
+		try:
+			if not compare_fn(actual, expected):
+				return BaseResult(Errno.ERROR_ASSERTION, what = f"contents not same")
+		except ValueError:
+			return BaseResult(Errno.ERROR_ASSERTION, what = f"contents should be {type_error_message}")
+
+		return err_ok()
 
 	def _compare_details(self, actual: List[str], expected: List[str], compare_fn: Callable[[str, str], bool], type_error_message: str, assertion_message_fn: Callable[[int, int, str, str], BaseResult] = None) -> BaseResult:
 		actual_len = len(actual)
@@ -282,7 +327,8 @@ class BaseTest:
 			is_raw_input: bool,
 			is_raw_output: bool,
 			input_separator: str,
-			comparator: Optional[BaseComparator]
+			comparator: Optional[BaseComparator],
+			testing_type: BaseTestingType
 	):
 		self.name = name
 		self.categories = categories
@@ -299,6 +345,8 @@ class BaseTest:
 		self.__input_separator = input_separator
 
 		self.__comparator = comparator
+
+		self.__testing_type = testing_type
 
 		self.__passes = exitcode == 0
 
@@ -349,16 +397,24 @@ class BaseTest:
 				return (end - start, None)
 
 	def __collect_to_result(self, stdout: str, stderr: str, returncode: int, timer: int, base_result: BaseResult) -> BaseResult:
+		base_result.testing_type = self.__testing_type
 		base_result.output = stdout
+
 		if self.__output_stream is not None:
 			if not os.path.exists(self.__output_stream):
 				base_result.output = None
 			else:
-				with open(self.__output_stream, 'r') as file:
-					base_result.output = file.read()
+				if self.__testing_type == BaseTestingType.T_TEXT:
+					with open(self.__output_stream, 'r') as file:
+						base_result.output = file.read()
+				elif self.__testing_type == BaseTestingType.T_BINARY:
+					with open(self.__output_stream, 'rb') as file:
+						base_result.output = file.read()
+
 		base_result.stderr = stderr
 		base_result.timer = timer
 		base_result.exitcode = returncode
+
 		return base_result
 
 	def __should_pass(self, stdout: str, stderr: str, returncode: int, check_output: bool) -> BaseResult:
@@ -386,31 +442,43 @@ class BaseTest:
 			return err_stderr_not_empty(stderr)
 
 		# Read actual content.
-		actual_content: List[str] = []
-		if self.__output_stream is None:
-			actual_content = stdout.split('\n')
-		else:
+		actual_content: ContentT = None
+		if self.__testing_type == BaseTestingType.T_TEXT:
+			if self.__output_stream is None:
+				actual_content = stdout.split('\n')
+			else:
+				if not os.path.exists(self.__output_stream):
+					return err_file_not_found(self.__output_stream)
+				with open(self.__output_stream, 'r') as file:
+					actual_content = file.read().split('\n')
+		elif self.__testing_type == BaseTestingType.T_BINARY and self.__output_stream is not None:
 			if not os.path.exists(self.__output_stream):
 				return err_file_not_found(self.__output_stream)
-			with open(self.__output_stream, 'r') as file:
-				actual_content = file.read().split('\n')
+			with open(self.__output_stream, 'rb') as file:
+				actual_content = file.read()
+		elif self.__testing_type == BaseTestingType.T_META and self.__output_stream is None:
+			actual_content = BaseMeta(self.__input)
+		else:
+			raise ValueError("[FATAL ERROR] Testing type is not exists or incompatible combination with output stream")
 
 		# Read expected content.
-		expected_content: List[str] = []
-		if self.__is_raw_output:
+		expected_content: ContentT = None
+		if self.__is_raw_output and self.__testing_type == BaseTestingType.T_TEXT:
 			expected_content = to_list(self.__expected)
-		else:
+		elif self.__testing_type == BaseTestingType.T_BINARY or self.__testing_type == BaseTestingType.T_TEXT:
 			if not isinstance(self.__expected, str):
 				raise ValueError('[FATAL ERROR] When it\'s not raw string producer, then it should be path/to/file with wanted contents.')
-			with open(self.__expected, 'r') as file:
-				expected_content = file.read().split('\n')
+			if self.__testing_type == BaseTestingType.T_TEXT:
+				with open(self.__expected, 'r') as file:
+					expected_content = file.read().split('\n')
+			else:
+				with open(self.__expected, 'rb') as file:
+					expected_content = file.read()
+		elif self.__testing_type == BaseTestingType.T_META:
+			expected_content = BaseMeta(self.__expected)
 
 		# CASE: assertion.
-		try:
-			result = self.__comparator.compare(actual_content, expected_content)
-			return result
-		except Exception as e:
-			return err_unknown(str(e))
+		return self.__comparator.compare(actual_content, expected_content)
 
 	def __should_fail(self, stdout: str, stderr: str, returncode: int) -> BaseResult:
 		# CASE: Program returns 0.
@@ -448,6 +516,7 @@ class BaseTest:
 				timeout_result = err_timeout()
 				timeout_result.timer = timer
 				timeout_result.exitcode = -1
+				timeout_result.testing_type = self.__testing_type
 				return timeout_result
 
 			stdout, stderr, returncode = results
@@ -459,7 +528,9 @@ class BaseTest:
 			should_fail_result = self.__should_fail(stdout, stderr, returncode)
 			return self.__collect_to_result(stdout, stderr, returncode, timer, should_fail_result)
 		except Exception as e:
-			return err_unknown(str(e))
+			result = err_unknown(str(e))
+			result.testing_type = self.__testing_type
+			return result
 
 	def get_input(self) -> str:
 		input_content = to_str(self.__input, ' ')
@@ -535,9 +606,17 @@ class BaseSuite:
 				json_single_result['verdict_additional_info'] = additional_info
 			json_single_result['name'] = test.name
 			json_single_result['input'] = test.get_input()
-			json_single_result['output'] = '<no output>' if result.output is None or result.output == '' else result.output
-			reference_str = test.get_reference()
-			json_single_result['reference'] = '<no reference>' if reference_str is None or reference_str == '' else reference_str
+			if result.testing_type == BaseTestingType.T_TEXT:
+				json_single_result['output'] = '<no output>' if result.output is None or result.output == '' else result.output
+			elif result.testing_type == BaseTestingType.T_BINARY:
+				json_single_result['output'] = '<no output>' if result.output is None or result.output == '' else '<raw bytes>'
+			elif result.testing_type == BaseTestingType.T_META:
+				json_single_result['output'] = '<very meta info>'
+			if result.testing_type == BaseTestingType.T_TEXT:
+				reference_str = test.get_reference()
+				json_single_result['reference'] = '<no reference>' if reference_str is None or reference_str == '' else reference_str
+			else:
+				json_single_result['reference'] = '<no reference>'
 			json_single_result['stderr'] = '<no error output>' if result.stderr is None or result.stderr == '' else result.stderr
 			json_single_result['exitcode'] = result.exitcode
 			json_single_result['time'] = result.timer
@@ -545,11 +624,12 @@ class BaseSuite:
 		return json_results
 
 class BaseTester:
-	def __init__(self, is_stdin_input: bool = True, is_raw_input: bool = True, is_raw_output: bool = True, input_separator: str = ' '):
+	def __init__(self, is_stdin_input: bool = True, is_raw_input: bool = True, is_raw_output: bool = True, input_separator: str = ' ', testing_type: BaseTestingType = BaseTestingType.T_TEXT):
 		self.__is_stdin_input = is_stdin_input
 		self.__is_raw_input = is_raw_input
 		self.__is_raw_output = is_raw_output
 		self.__input_separator = input_separator
+		self.__testing_type = testing_type
 		self.__tests: List[BaseTest] = []
 
 		# Not RAW input with not STDIN communication sounds strange.
@@ -557,11 +637,11 @@ class BaseTester:
 			raise NotImplementedError('[FATAL ERROR] Not raw input (from file) with cmd\'s arguments communication is not supported yet.')
 
 	def add_success(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], expected: Union[str, int, float, List[str], List[int], List[float]], output_stream: str = None, timeout: float = 1.0, categories: Iterable[str] = [], comparator: BaseComparator = BaseComparator()):
-		test = BaseTest(name, categories, input, expected, output_stream, timeout, 0, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator, comparator)
+		test = BaseTest(name, categories, input, expected, output_stream, timeout, 0, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator, comparator, self.__testing_type)
 		self.__tests.append(test)
 
 	def add_failed(self, name: str, input: Union[str, int, float, List[str], List[int], List[float]], exitcode: int, timeout: float = 1.0, categories: Iterable[str] = []):
-		test = BaseTest(name, categories, input, None, None, timeout, exitcode, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator, None)
+		test = BaseTest(name, categories, input, None, None, timeout, exitcode, self.__is_stdin_input, self.__is_raw_input, self.__is_raw_output, self.__input_separator, None, self.__testing_type)
 		self.__tests.append(test)
 
 	def run(self, program: str, check_output: bool, timeout_factor: float) -> BaseSuite:
