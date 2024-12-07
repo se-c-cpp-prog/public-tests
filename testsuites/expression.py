@@ -127,7 +127,7 @@ def __generate_good_tests() -> Iterable[Tuple[str, str, __TestData]]:
 		["+ 0", "0"],
 		["+ 1", "1"],
 		["+1", "1"],
-		["+2147483647", "+2147483647"]
+		["+2147483647", "2147483647"]
 	]
 	generated += __generate_good_categorized_tests('unary plus', tests)
 
