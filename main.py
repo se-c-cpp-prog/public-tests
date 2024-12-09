@@ -13,12 +13,14 @@ import testsuites.sum as suite_sum
 import testsuites.invertible_matrix as suite_invertible_matrix
 import testsuites.sprintf as suite_sprintf
 import testsuites.expression as suite_expression
+import testsuites.png as suite_png
 
 SELECTOR: Dict[str, Tuple[base.BaseTester, Optional[Dict[str, float]]]] = {
 	suite_sum.SUITE_NAME: suite_sum.get_instance(),
 	suite_invertible_matrix.SUITE_NAME: suite_invertible_matrix.get_instance(),
 	suite_sprintf.SUITE_NAME: suite_sprintf.get_instance(),
-	suite_expression.SUITE_NAME: suite_expression.get_instance()
+	suite_expression.SUITE_NAME: suite_expression.get_instance(),
+	suite_png.SUITE_NAME: suite_png.get_instance()
 }
 
 def __t_or_f(arg: str, flag_name: str) -> bool:
