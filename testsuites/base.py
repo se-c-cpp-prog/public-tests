@@ -192,7 +192,7 @@ def err_stderr_not_empty(stderr: str) -> BaseResult:
 	return BaseResult(Errno.ERROR_STDERR_NOT_EMPTY, what = "stderr: \"%s\"" % (escape(stderr)))
 
 def err_exitcode(actual_exitcode: int, expected_exitcode: int) -> BaseResult:
-	return BaseResult(Errno.ERROR_EXITCODE, what = "expected %d, but actual %d" % (actual_exitcode, expected_exitcode))
+	return BaseResult(Errno.ERROR_EXITCODE, what = "expected %d, but actual %d" % (expected_exitcode, actual_exitcode))
 
 def err_timeout() -> BaseResult:
 	return BaseResult(Errno.ERROR_TIMEOUT)
