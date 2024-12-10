@@ -97,7 +97,7 @@ def __generate_bad_tests() -> Iterable[Tuple[str, str, __TestData]]:
 		["( 22 - 5 ) + 556 ) * ( 2 + 2 )", E_PARSER],
 
 		["()", E_PARSER], ["(", E_PARSER], [")", E_PARSER],
-		["+", E_PARSER], ["=", E_SUPPORT], ["\\", E_PARSER],
+		["+", E_PARSER], ["=", E_SUPPORT], ["\\", E_SUPPORT],
 		["2***2", E_PARSER], ["2+++2", E_PARSER], ["2+-+2", E_PARSER],
 		["4* 8", E_PARSER], ["4 +8", E_PARSER], ["4 ~8", E_PARSER],
 
