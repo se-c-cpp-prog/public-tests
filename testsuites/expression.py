@@ -63,43 +63,47 @@ def __generate_bad_categorized_tests(category: str, tests: List[str]) -> List[Tu
 def __generate_bad_tests() -> Iterable[Tuple[str, str, __TestData]]:
 	generated: List[Tuple[str, str, __TestData]] = []
 
+	E_SUPPORT = 1
+	E_MATH = 2
+	E_PARSER = 3
+
 	tests = [
-		["* 2", 3], ["2 *", 3],
-		["/ 2", 3], ["2 /", 3],
-		["% 2", 3], ["2 %", 3],
-		["& 2", 3], ["2 &", 3],
-		["| 2", 3], ["2 |", 3],
-		["^ 2", 3], ["2 ^", 3],
-		["<< 2", 3], ["2 >>", 3],
-		[">> 2", 3], ["2 >>", 3],
-		["2 * * 2", 3], ["2 * 2 *", 3], [" * 2 ** 2", 3]
+		["* 2", E_PARSER], ["2 *", E_PARSER],
+		["/ 2", E_PARSER], ["2 /", E_PARSER],
+		["% 2", E_PARSER], ["2 %", E_PARSER],
+		["& 2", E_PARSER], ["2 &", E_PARSER],
+		["| 2", E_PARSER], ["2 |", E_PARSER],
+		["^ 2", E_PARSER], ["2 ^", E_PARSER],
+		["<< 2", E_PARSER], ["2 >>", E_PARSER],
+		[">> 2", E_PARSER], ["2 >>", E_PARSER],
+		["2 * * 2", E_PARSER], ["2 * 2 *", E_PARSER], [" * 2 ** 2", E_PARSER]
 	]
 	generated += __generate_bad_categorized_tests('binary (neg)', tests)
 		
 	tests = [
-		["2 ** -2", 2],
-		["0 / 0", 2], ["-2147483648 / -1", 2],
-		["0 % 0", 2], ["-2147483648 % -1", 2],	
-		["1 << 32", 2], ["1 << 60", 2], ["1 << -1", 2],
-		["1 >> 32", 2], ["1 >> 60", 2], ["1 >> -1", 2]
+		["2 ** -2", E_MATH],
+		["0 / 0", E_MATH], ["-2147483648 / -1", E_MATH],
+		["0 % 0", E_MATH], ["-2147483648 % -1", E_MATH],
+		["1 << 32", E_MATH], ["1 << 60", E_MATH], ["1 << -1", E_MATH],
+		["1 >> 32", E_MATH], ["1 >> 60", E_MATH], ["1 >> -1", E_MATH]
 	]
 	generated += __generate_bad_categorized_tests('binary (UB/ID)', tests)
 
 	tests = [
-		["( 22 - 5 ) + 556 * ( 2 + 2", 3],
-		["( ( 22 - 5 ) + 556 * ( 2 + 2 )", 3],
-		["( ( 22 - 5 ) + ( 556 * ( 2 + 2 ) )", 3],
-		["( 22 - 5 ) + 556 * ( 2 + 2 ) )", 3],
-		["( 22 - 5 ) + 556 ) * ( 2 + 2 )", 3],
+		["( 22 - 5 ) + 556 * ( 2 + 2", E_PARSER],
+		["( ( 22 - 5 ) + 556 * ( 2 + 2 )", E_PARSER],
+		["( ( 22 - 5 ) + ( 556 * ( 2 + 2 ) )", E_PARSER],
+		["( 22 - 5 ) + 556 * ( 2 + 2 ) )", E_PARSER],
+		["( 22 - 5 ) + 556 ) * ( 2 + 2 )", E_PARSER],
 
-		["()", 3], ["(", 3], [")", 3],
-		["+", 3], ["=", 1], ["\\", 3],
-		["2***2", 3], ["2+++2", 3], ["2+-+2", 3],
-		["4* 8", 3], ["4 +8", 3], ["4 ~8", 3],
+		["()", E_PARSER], ["(", E_PARSER], [")", E_PARSER],
+		["+", E_PARSER], ["=", E_SUPPORT], ["\\", E_PARSER],
+		["2***2", E_PARSER], ["2+++2", E_PARSER], ["2+-+2", E_PARSER],
+		["4* 8", E_PARSER], ["4 +8", E_PARSER], ["4 ~8", E_PARSER],
 
-		["1 + ( 2 * * 2 )", 3],
-		["( 2 * 2 * ) + 6", 3],
-		["9 + ( * 2 ** 2 )", 3],
+		["1 + ( 2 * * 2 )", E_PARSER],
+		["( 2 * 2 * ) + 6", E_PARSER],
+		["9 + ( * 2 ** 2 )", E_PARSER],
 	]
 	generated += __generate_bad_categorized_tests('(complex) (neg)', tests)
 
@@ -234,7 +238,7 @@ def __generate_good_tests() -> Iterable[Tuple[str, str, __TestData]]:
 	generated += __generate_good_categorized_tests('bitwise AND', tests)
 	
 	tests = [
-		["0 | 225", "255"],
+		["0 | 225", "225"],
 		["15 | 6", "15"],
 		["2730 | 990", "3070"],
 		["2147483647 | 4", "2147483647"],
@@ -244,7 +248,7 @@ def __generate_good_tests() -> Iterable[Tuple[str, str, __TestData]]:
 	generated += __generate_good_categorized_tests('bitwise OR', tests)
 	
 	tests = [
-		["0 ^ 225", "255"],
+		["0 ^ 225", "225"],
 		["15 ^ 6", "9"],
 		["2730 ^ 990", "2420"],
 		["2147483647 ^ 4", "2147483643"],
