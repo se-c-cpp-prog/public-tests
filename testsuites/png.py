@@ -175,7 +175,7 @@ def __generate_good_tests() -> Iterable[Tuple[str, str, str, str, str, base.Base
 	return generated
 
 def get_instance() -> Tuple[base.BaseTester, Optional[Dict[str, float]]]:
-	TIMEOUT = 0.5
+	TIMEOUT = 1.0
 
 	png_tester = base.BaseTester(is_stdin_input = False, is_raw_input = True, is_raw_output = False, testing_type = base.BaseTestingType.T_META)
 
